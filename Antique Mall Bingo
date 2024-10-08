@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Antique Mall Bingo</title>
+    <script type="module">
+        // Replace Firebase initialization with local storage
+        const localStore = {
+            getItem: (key) => JSON.parse(localStorage.getItem(key)),
+            setItem: (key, value) => localStorage.setItem(key, JSON.stringify(value)),
+        };
+
+        // Static board definition (unchanged)
+        const staticBoard = [
+            { name: 'The Griffin', code: "JD123" },
+            { name: 'Room 3', code: "J5456"},
+            { name: 'Central Antiques', code: "AJ678" },
+            { name: 'Wagon Wheel', code: "EB101" },
+            { name: 'Ancient of Days', code: "PW102" },
+            { name: 'Antique Co-Op', code: "JD278" },
+            { name: 'Decades Revisited', code: "DJ104" },
+            { name: 'Rink', code: "SM105" },
+            { name: 'Apple Tree', code: "CW106" },
+            { name: 'Eden', code: "LG107" },
+            { name: '23rd St Mall', code: "ER109" },
+            { name: 'Birdnest', code: "PA120" },
+            { name: 'Antique Avenue', code: "DT111" },
+            { name: 'Feathered Nest', code: "AT112" },
+            { name: 'RetrOKC', code: "AM113" },
+            { name: 'Bad Granny', code: "NL116" }
+        ];
+
+        // Event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("DOM fully loaded");
+            document.getElementById('signUpButton').addEventListener('click', showSignUpForm);
+            document.getElementById('signInButton').addEventListener('click', showSignInForm);
+            document.getElementById('signUpUserForm1').addEventListener('submit', registerUser);
+            document.getElementById('signInUserForm1').addEventListener('submit', loginUser);
+            document.getElementById('signOutButton').addEventListener('click', signOutUser);
+            document.getElementById('codeForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                checkCode();
+            });
+            console.log("Event listeners attached");
+
+            // Add event listeners for back buttons
+            document.querySelectorAll('.backButton').forEach(button => {
+                button.addEventListener('click', showAuthButtons);
+            });
+
+            // Add event listener for admin form
+            document.getElementById('adminForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                checkAdminKey();
+            });
+        });
+
+        // Functions (simplified for local storage)
+        function showSignUpForm(event) {
+            if (event) event.preventDefault();
+            document.getElementById('signUpForm').classList.remove('hidden');
+            document.getElementById('signInForm').classList.add('hidden');
+            document.getElementById('authButtons').classList.add('hidden');
+        }
+
+        function showSignInForm(event) {
+            if (event) event.preventDefault();
+            document.getElementById('signInForm').classList.remove('hidden');
+            document.getElementById('signUpForm').classList.add('hidden');
+            document.getElementById('authButtons').classList.add('hidden');
+        }
+
+        function registerUser(event) {
+            event.preventDefault();
+            const email = document.getElementById('signUpEmail1').value;
+            const password = document.getElementById('signUpPassword').value;
+            const users = localStore.getItem('users') || {};
+            users[email] = { password, crossedCells: [] };
+            localStore.setItem('users', users);
+            loginUser({ preventDefault: () => {}, target: event.target });
+        }
+
+        function loginUser(event) {
+            event.preventDefault();
+            const email = document.getElementById('signInEmail1').value;
+            const password = document.getElementById('signInPassword').value;
+            const users = localStore.getItem('users') || {};
+            if (users[email] && users[email].password === password) {
+                localStore.setItem('currentUser', email);
+                loadUserBoard(email);
+                hideAuthForms();
+                showSignOutButton();
+            } else {
+                // Remove this alert
+                // alert("Invalid email or password");
+            }
+        }
+
+        function signOutUser(event) {
+            if (event) event.preventDefault();
+            localStore.setItem('currentUser', null);
+            document.getElementById('bingoGame').classList.add('hidden');
+            document.getElementById('signOutButton').classList.add('hidden');
+            document.getElementById('authButtons').classList.remove('hidden');
+            document.getElementById('bingoCard').innerHTML = '';
+        }
+
+        function loadUserBoard(email) {
+            const users = localStore.getItem('users') || {};
+            const crossedCells = users[email].crossedCells || [];
+            generateCard(crossedCells);
+            document.getElementById('bingoGame').classList.remove('hidden');
+        }
+
+        function generateCard(crossedCells) {
+            console.log("Generating card with crossed cells:", crossedCells);
+            const bingoCard = document.getElementById('bingoCard');
+            bingoCard.innerHTML = '';
+            for (let i = 0; i < 4; i++) {
+                const row = document.createElement('tr');
+                for (let j = 0; j < 4; j++) {
+                    const index = i * 4 + j;
+                    const cell = document.createElement('td');
+                    const span = document.createElement('span');
+                    span.textContent = staticBoard[index].name;
+                    cell.appendChild(span);
+                    if (crossedCells.includes(index)) {
+                        cell.classList.add('crossed');
+                    }
+                    cell.dataset.index = index;
+                    cell.addEventListener('click', () => toggleCell(index));
+                    row.appendChild(cell);
+                }
+                bingoCard.appendChild(row);
+            }
+            adjustFontSizes();
+            console.log("Card generated");
+        }
+
+        function toggleCell(index) {
+            const cell = document.querySelector(`#bingoCard td[data-index="${index}"]`);
+            cell.classList.toggle('crossed');
+            
+            const email = localStore.getItem('currentUser');
+            const users = localStore.getItem('users');
+            let crossedCells = users[email].crossedCells || [];
+            
+            if (cell.classList.contains('crossed')) {
+                if (!crossedCells.includes(index)) {
+                    crossedCells.push(index);
+                }
+            } else {
+                crossedCells = crossedCells.filter(i => i !== index);
+            }
+            
+            users[email].crossedCells = crossedCells;
+            localStore.setItem('users', users);
+            
+            checkForBingo(crossedCells);
+        }
+
+        function checkForBingo(crossedCells) {
+            const winningCombinations = [
+                [0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15], // Rows
+                [0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3, 7, 11, 15], // Columns
+                [0, 5, 10, 15], [3, 6, 9, 12] // Diagonals
+            ];
+
+            for (let combo of winningCombinations) {
+                if (combo.every(index => crossedCells.includes(index))) {
+                    // Remove this alert
+                    // alert('BINGO! You won!');
+                    highlightWinningCells(combo);
+                    break;
+                }
+            }
+        }
+
+        function highlightWinningCells(winningCombo) {
+            for (let index of winningCombo) {
+                document.querySelector(`#bingoCard td[data-index="${index}"]`).classList.add('bingo-highlight');
+            }
+        }
+
+        function checkCode() {
+            const codeInput = document.getElementById('codeInput1');
+            const enteredCode = codeInput.value.trim().toUpperCase();
+            
+            // Check for admin keys
+            if (enteredCode === "13812024") {
+                highlightValidBingos();
+                codeInput.value = '';
+                return;
+            } else if (enteredCode === "RESET1234") {
+                resetBoard();
+                codeInput.value = '';
+                return;
+            }
+            
+            // Check for regular codes
+            const matchingPair = staticBoard.find(item => item.code === enteredCode);
+            if (matchingPair) {
+                const cellIndex = staticBoard.indexOf(matchingPair);
+                if (cellIndex !== -1) {
+                    toggleCell(cellIndex);
+                }
+            }
+            
+            // Clear input field
+            codeInput.value = '';
+        }
+
+        function resetBoard() {
+            const email = localStore.getItem('currentUser');
+            const users = localStore.getItem('users') || {};
+            if (users[email]) {
+                users[email].crossedCells = [];
+                localStore.setItem('users', users);
+                loadUserBoard(email);
+            }
+        }
+
+        function hideAuthForms() {
+            document.getElementById('signUpForm').classList.add('hidden');
+            document.getElementById('signInForm').classList.add('hidden');
+            document.getElementById('authButtons').classList.add('hidden');
+        }
+
+        function showSignOutButton() {
+            document.getElementById('signOutButton').classList.remove('hidden');
+        }
+
+        function adjustFontSizes() {
+            const cells = document.querySelectorAll('#bingoCard td');
+            cells.forEach(cell => {
+                let fontSize = 16;
+                const span = cell.querySelector('span');
+                span.style.fontSize = fontSize + 'px';
+                while (span.scrollWidth > cell.offsetWidth || span.scrollHeight > cell.offsetHeight) {
+                    fontSize--;
+                    span.style.fontSize = fontSize + 'px';
+                    if (fontSize <= 6) break; // Minimum font size
+                }
+            });
+        }
+
+        function showAuthButtons() {
+            document.getElementById('authButtons').classList.remove('hidden');
+            document.getElementById('signUpForm').classList.add('hidden');
+            document.getElementById('signInForm').classList.add('hidden');
+        }
+
+        function checkAdminKey() {
+            const adminKey = document.getElementById('adminKeyInput').value;
+            // Replace 'your-admin-key' with the actual admin key
+            if (adminKey === 'your-admin-key') {
+                // Add admin functionality here
+            }
+            document.getElementById('adminKeyInput').value = '';
+        }
+
+        function highlightValidBingos() {
+            const email = localStore.getItem('currentUser');
+            const users = localStore.getItem('users') || {};
+            const crossedCells = users[email].crossedCells || [];
+
+            const winningCombinations = [
+                [0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11], [12, 13, 14, 15], // Rows
+                [0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3, 7, 11, 15], // Columns
+                [0, 5, 10, 15], [3, 6, 9, 12] // Diagonals
+            ];
+
+            for (let combo of winningCombinations) {
+                if (combo.every(index => crossedCells.includes(index))) {
+                    highlightWinningCells(combo);
+                }
+            }
+        }
+
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+
+        #bingoContainer {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 500px; /* Default size for mobile */
+            margin: 20px auto;
+        }
+
+        td {
+            border: 2px solid #000;
+            width: 20%;
+            aspect-ratio: 1 / 1;
+            text-align: center;
+            vertical-align: middle;
+            font-size: 8px;
+            padding: 2px;
+            position: relative;
+        }
+
+        td span {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .crossed {
+            background-color: lightgray;
+            text-decoration: line-through;
+        }
+
+        .bingo-highlight {
+            background-color: lightgreen;
+        }
+
+        #codeForm, #adminForm, #authButtons {
+            margin: 20px 0;
+            text-align: center;
+        }
+
+        button, input[type="submit"] {
+            margin: 5px;
+            padding: 10px;
+            font-size: 16px;
+        }
+
+        input[type="text"], input[type="email"], input[type="password"] {
+            padding: 5px;
+            font-size: 16px;
+        }
+
+        #signOutButton {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        @media (min-width: 768px) {
+            table {
+                max-width: 600px; /* Larger size for desktop */
+            }
+
+            td {
+                font-size: 12px;
+            }
+        }
+
+        .backButton {
+            background-color: #f0f0f0;
+            color: #333;
+            border: 1px solid #ccc;
+        }
+
+        #adminForm {
+            margin-top: 20px;
+        }
+
+        #codeForm {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="bingoContainer">
+        <h1>Antique Mall Bingo</h1>
+        <div id="authButtons">
+            <button id="signUpButton">Sign Up</button>
+            <button id="signInButton">Sign In</button>
+        </div>
+        <div id="signUpForm" class="hidden">
+            <form id="signUpUserForm1">
+                <input type="email" id="signUpEmail1" placeholder="Email" required>
+                <input type="password" id="signUpPassword" placeholder="Password" required>
+                <button type="submit">Sign Up</button>
+                <button type="button" class="backButton">Back</button>
+            </form>
+        </div>
+        <div id="signInForm" class="hidden">
+            <form id="signInUserForm1">
+                <input type="email" id="signInEmail1" placeholder="Email" required>
+                <input type="password" id="signInPassword" placeholder="Password" required>
+                <button type="submit">Sign In</button>
+                <button type="button" class="backButton">Back</button>
+            </form>
+        </div>
+        <button id="signOutButton" class="hidden">Sign Out</button>
+        <div id="bingoGame" class="hidden">
+            <form id="codeForm">
+                <input type="text" id="codeInput1" placeholder="Enter code" required>
+                <button type="submit">Submit Code</button>
+            </form>
+            <table id="bingoCard"></table>
+            <form id="adminForm" class="hidden">
+                <input type="text" id="adminKeyInput" placeholder="Enter admin key" required>
+                <button type="submit">Submit Admin Key</button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
